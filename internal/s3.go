@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -22,11 +23,16 @@ import (
 
 const defaultPathFormat = "2006/01/02"
 
-func UploadFile(ctx context.Context, server S3Server, filePath string) (string, string, error) {
-	key, err := buildObjectKey(server, filePath, time.Now())
-	if err != nil {
-		return "", "", err
-	}
+func UploadFile(ctx context.Context, server S3Server, filePath string, unique bool) (string, string, error) {
+	debugf("upload start file=%s", filePath)
+	debugf("endpoint=%s force_path_style=%t base_dir=%s path_format=%s acl=%s cdn_base_url=%s",
+		server.Endpoint,
+		server.ForcePathStyle,
+		server.BaseDir,
+		server.PathFormat,
+		server.ACL,
+		server.CDNBaseURL,
+	)
 
 	cfgOptions := []func(*config.LoadOptions) error{
 		config.WithRegion(server.Region),
@@ -60,10 +66,28 @@ func UploadFile(ctx context.Context, server S3Server, filePath string) (string, 
 	}
 	defer file.Close()
 
+	name, err := objectNameFromFile(file, filePath, unique)
+	if err != nil {
+		return "", "", err
+	}
+
+	key, err := buildObjectKey(server, name, time.Now())
+	if err != nil {
+		return "", "", err
+	}
+	debugf("object key=%s bucket=%s region=%s unique=%t", key, server.Bucket, server.Region, unique)
+
+	if statter, ok := file.(interface{ Stat() (os.FileInfo, error) }); ok {
+		if info, err := statter.Stat(); err == nil {
+			debugf("file size=%d bytes", info.Size())
+		}
+	}
+
 	contentType, err := sniffContentType(file)
 	if err != nil {
 		return "", "", err
 	}
+	debugf("content-type=%s", contentType)
 
 	input := &s3.PutObjectInput{
 		Bucket:      aws.String(server.Bucket),
@@ -75,18 +99,21 @@ func UploadFile(ctx context.Context, server S3Server, filePath string) (string, 
 		input.ACL = types.ObjectCannedACL(server.ACL)
 	}
 
-	if _, err := client.PutObject(ctx, input); err != nil {
+	output, err := client.PutObject(ctx, input)
+	if err != nil {
 		return "", "", err
 	}
 
-	return key, buildCDNURL(server.CDNBaseURL, key), nil
+	if output != nil {
+		debugf("put-object etag=%s version_id=%s", aws.ToString(output.ETag), aws.ToString(output.VersionId))
+	}
+	cdnURL := buildCDNURL(server.CDNBaseURL, key)
+	debugf("cdn_url=%s", cdnURL)
+
+	return key, cdnURL, nil
 }
 
-func buildObjectKey(server S3Server, filePath string, now time.Time) (string, error) {
-	name, err := randomName(16)
-	if err != nil {
-		return "", err
-	}
+func buildObjectKey(server S3Server, name string, now time.Time) (string, error) {
 	format := strings.TrimSpace(server.PathFormat)
 	if format == "" {
 		format = defaultPathFormat
@@ -99,8 +126,7 @@ func buildObjectKey(server S3Server, filePath string, now time.Time) (string, er
 	if format != "" {
 		parts = append(parts, now.Format(format))
 	}
-	ext := strings.ToLower(filepath.Ext(filePath))
-	parts = append(parts, name+ext)
+	parts = append(parts, name)
 	return path.Join(parts...), nil
 }
 
@@ -127,6 +153,25 @@ func sniffContentType(file io.ReadSeeker) (string, error) {
 		return "", err
 	}
 	return http.DetectContentType(buf[:n]), nil
+}
+
+func objectNameFromFile(file io.ReadSeeker, filePath string, unique bool) (string, error) {
+	ext := strings.ToLower(filepath.Ext(filePath))
+	if unique {
+		name, err := randomName(16)
+		if err != nil {
+			return "", err
+		}
+		return name + ext, nil
+	}
+	hasher := sha256.New()
+	if _, err := io.Copy(hasher, file); err != nil {
+		return "", err
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(hasher.Sum(nil)) + ext, nil
 }
 
 type readSeekCloser interface {

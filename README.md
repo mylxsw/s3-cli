@@ -5,16 +5,28 @@ A simple CLI to upload an image to an S3-compatible service and print a CDN URL.
 ## Usage
 
 ```bash
-s3-cli [options] <image-path>
+s3-cli [options] <image-path> [more-paths...]
 
 Options:
   -config string   Path to config file (default: ~/.s3-cli/config.yaml)
+  -debug
+                   Enable debug logging
+  -init-config
+                   Create default config file at config path and exit
   -server string   Server name defined in config
+  -unique
+                   Use random filename instead of content hash
 ```
 
 ## Config
 
 Default location: `~/.s3-cli/config.yaml`
+
+To create a starter config file:
+
+```bash
+s3-cli -init-config -config ~/.s3-cli/config.yaml
+```
 
 ```yaml
 default_server: "primary"

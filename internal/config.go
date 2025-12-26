@@ -20,12 +20,12 @@ type S3Server struct {
 	Bucket          string `yaml:"bucket"`
 	AccessKeyID     string `yaml:"access_key_id"`
 	SecretAccessKey string `yaml:"secret_access_key"`
-	SessionToken    string `yaml:"session_token"`
-	ForcePathStyle  bool   `yaml:"force_path_style"`
+	SessionToken    string `yaml:"session_token,omitempty"`
+	ForcePathStyle  bool   `yaml:"force_path_style,omitempty"`
 	CDNBaseURL      string `yaml:"cdn_base_url"`
 	BaseDir         string `yaml:"base_dir"`
 	PathFormat      string `yaml:"path_format"`
-	ACL             string `yaml:"acl"`
+	ACL             string `yaml:"acl,omitempty"`
 }
 
 func DefaultConfigPath() (string, error) {
