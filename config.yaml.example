@@ -1,0 +1,25 @@
+default_server: "qiniu"
+
+servers:
+  qiniu:
+    endpoint: "https://s3-cn-east-1.qiniucs.com"
+    region: "cn-east-1"
+    bucket: "your-bucket"
+    access_key_id: "QINIU_ACCESS_KEY"
+    secret_access_key: "QINIU_SECRET_KEY"
+    force_path_style: true
+    cdn_base_url: "https://cdn.example.com"
+    base_dir: "images"
+    path_format: "2006/01/02"
+    acl: "public-read"
+
+  cloudflare:
+    endpoint: "https://<account-id>.r2.cloudflarestorage.com"
+    region: "auto"
+    bucket: "your-bucket"
+    access_key_id: "R2_ACCESS_KEY"
+    secret_access_key: "R2_SECRET_KEY"
+    force_path_style: true
+    cdn_base_url: "https://assets.example.com"
+    base_dir: "uploads"
+    path_format: "2006/01/02"
