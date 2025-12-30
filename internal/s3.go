@@ -23,6 +23,38 @@ import (
 
 const defaultPathFormat = "2006/01/02"
 
+func downloadToTempFile(url string) (string, error) {
+	debugf("downloading remote file: %s", url)
+	resp, err := http.Get(url)
+	if err != nil {
+		return "", fmt.Errorf("failed to download file from %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("failed to download file from %s: status code %d", url, resp.StatusCode)
+	}
+
+	tmpFile, err := os.CreateTemp("", "s3-cli-upload-")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temporary file: %w", err)
+	}
+
+	_, err = io.Copy(tmpFile, resp.Body)
+	if err != nil {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpFile.Name())
+		return "", fmt.Errorf("failed to write to temporary file: %w", err)
+	}
+
+	if err := tmpFile.Close(); err != nil {
+		_ = os.Remove(tmpFile.Name())
+		return "", fmt.Errorf("failed to close temporary file: %w", err)
+	}
+
+	return tmpFile.Name(), nil
+}
+
 func UploadFile(ctx context.Context, server S3Server, filePath string, unique bool) (string, string, error) {
 	debugf("upload start file=%s", filePath)
 	debugf("endpoint=%s force_path_style=%t base_dir=%s path_format=%s acl=%s cdn_base_url=%s",
@@ -33,6 +65,17 @@ func UploadFile(ctx context.Context, server S3Server, filePath string, unique bo
 		server.ACL,
 		server.CDNBaseURL,
 	)
+
+	originalFilePath := filePath
+	if strings.HasPrefix(filePath, "http://") || strings.HasPrefix(filePath, "https://") {
+		tmpfileName, err := downloadToTempFile(filePath)
+		if err != nil {
+			return "", "", err
+		}
+		defer os.Remove(tmpfileName)
+
+		filePath = tmpfileName
+	}
 
 	cfgOptions := []func(*config.LoadOptions) error{
 		config.WithRegion(server.Region),
@@ -66,7 +109,7 @@ func UploadFile(ctx context.Context, server S3Server, filePath string, unique bo
 	}
 	defer file.Close()
 
-	name, err := objectNameFromFile(file, filePath, unique)
+	name, err := objectNameFromFile(file, originalFilePath, unique)
 	if err != nil {
 		return "", "", err
 	}
